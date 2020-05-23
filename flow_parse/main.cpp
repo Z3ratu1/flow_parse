@@ -3,7 +3,6 @@
 
 #include <iostream>
 #include<fstream>
-#include <cstring>
 #include"base_type.h"
 #include"buildFlow.h"
 #include"MySQLConnector.h"
@@ -13,21 +12,26 @@ extern char* jsonFileName;
 int main(int argc, char* argv[])
 {
     jsonFileName = argv[2];
-    if (argv[1] == "f")
+    char* pcapFileName;
+    int o;
+    while ((o = getopt(argc, argv, "fp")) != -1)
     {
-        cout << "file: " << jsonFileName << endl;
-        BuildFlow();
-    }
-    else if (argv[1] == "p")
-    {
-        char* pcapFileName = argv[3];
-        cout << "pcapFile: " << pcapFileName << endl;
-        cout << "jsonFile: " << jsonFileName << endl;
-        ParsePcap(pcapFileName);
-    }
-    else
-    {
-        cout<<"第一个参数f/p选择使用flow或pcap，第二个参数为json文件名，选择p需要输入第三个参数pcapFileName"
+        switch (o)
+        {
+        case 'f':
+            cout << "file: " << jsonFileName << endl;
+            BuildFlow();
+            break;
+        case 'p':
+            pcapFileName = argv[3];
+            cout << "pcapFile: " << pcapFileName << endl;
+            cout << "jsonFile: " << jsonFileName << endl;
+            ParsePcap(pcapFileName);
+            break;
+        default:
+            cout << "first argument choose -f|-p to use flow or pcap，second argument is json file name ，chose p need to input 3rd arugment pcap file name";
+            break;
+        }
     }
     return 0;
 }
