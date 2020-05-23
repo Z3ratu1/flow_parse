@@ -8,9 +8,10 @@
 #include <unordered_map>
 #include <postgresql/libpq-fe.h>
 #include <postgresql/libpq/libpq-fs.h>
+#include"base_type.h"
 using namespace std;
 
-void initDict(unordered_map<string, int> &dict)	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+void initDict(unordered_map<Tuble, int, hashTuble> &dict)	//³õÊ¼»¯É¸²é×Öµä
 {
 	string strSql = "host = 127.0.0.1 port = 5432 dbname = capture user = capture password = cap1234";
 	PGconn* conn;
@@ -37,17 +38,15 @@ void initDict(unordered_map<string, int> &dict)	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	uint32_t res_ip, i;
 	uint16_t res_port;
 	uint32_t res_num = PQntuples(res);
-	//ï¿½ï¿½É¸ï¿½Öµï¿½ï¿½Ê¼ï¿½ï¿?
+
 	for (i = 0; i < res_num; i++) 
 	{
 		res_ip = atoi(PQgetvalue(res, i, 0));
 		res_port = atoi(PQgetvalue(res, i, 1));
-    //if(res_port == 80 || res_port == 443)
-		//{
-   		  //cout << res_ip << "," << res_port << endl;
-        pair<string, int>ip_info(to_string(res_ip)+to_string(res_port), i);
-		    dict.insert(ip_info);
-    //}
+		//È¡Ïû¶Ë¿Ú¹ýÂË
+		Tuble d(res_port, res_ip);
+		pair<Tuble, int>ip_info(d, i);
+		dict.insert(ip_info);
 	}
 	PQclear(res);
 	cout << "init Dict success" << endl;

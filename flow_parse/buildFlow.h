@@ -158,7 +158,7 @@ void BuildFlow()
     PacketInfo packetInfo;
     Triple port_ip;
     unordered_map<Triple, int, hashTriple> flowDict;    //查找流下标的字典
-    unordered_map<string, int> IPDict;    //筛选IP和端口的字典
+    unordered_map<Tuble, int, hashTuble> IPDict;    //筛选IP和端口的字典
     int index = 0;  //总流数，包括被剪枝的流
     Flow** flowList = new Flow * [MAX_FLOW_NUMBER];         //流数组
 
@@ -218,28 +218,26 @@ void BuildFlow()
             tcpinfo->sourcePort = htons(tcpinfo->sourcePort);
             tcpinfo->destinationPort = htons(tcpinfo->destinationPort);
 
-           // if (tcpinfo->sourcePort == 80 || tcpinfo->sourcePort == 443)  //筛选端口
-           //{
-                //cout<<ipinfo->sourceIP<<","<<tcpinfo->sourcePort<<endl;
-                // 查字典
-                unordered_map<string, int>::const_iterator got;
-                got = IPDict.find(to_string(ipinfo->sourceIP) + to_string(tcpinfo->sourcePort));
+            //取消了端口筛选
+            // 查字典
+            unordered_map<Tuble, int, hashTuble>::const_iterator got;
+            Tuble d(tcpinfo->sourcePort, ipinfo->sourceIP);
+            got = IPDict.find(d);
 
-                if (got != IPDict.end())    //筛选IP
-                {
-                    //创建单个处理对象
-                    port_ip.destinationIP = ipinfo->destinationIP;
-                    port_ip.sourceIP = ipinfo->sourceIP;
-                    port_ip.sourcePort = tcpinfo->sourcePort;
-                    packetInfo.port_ip = port_ip;
-                    packetInfo.len = ipinfo->total_length;
-                    packetInfo.seconds = seconds;
-                    packetInfo.u_seconds = u_seconds;
+            if (got != IPDict.end())    //筛选IP
+            {
+                //创建单个处理对象
+                port_ip.destinationIP = ipinfo->destinationIP;
+                port_ip.sourceIP = ipinfo->sourceIP;
+                port_ip.sourcePort = tcpinfo->sourcePort;
+                packetInfo.port_ip = port_ip;
+                packetInfo.len = ipinfo->total_length;
+                packetInfo.seconds = seconds;
+                packetInfo.u_seconds = u_seconds;
 
-                    //cout << "found in dict" <<endl;
-                    InsertFlow(flowDict, packetInfo, flowList, index);
-                }
-           //}
+                InsertFlow(flowDict, packetInfo, flowList, index);
+            }
+
         }
     }
     

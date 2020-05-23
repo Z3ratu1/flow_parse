@@ -82,6 +82,66 @@ struct Triple   //哈希用三元组
     }
 };
 
+struct hashTriple
+{
+    uint32_t operator()(const Triple& tri) const   //生成hashKey
+    {
+        Triple t = tri;
+        uint32_t hash_value = 5381;
+        while (t.sourceIP > 0)
+        {
+            hash_value = ((hash_value << 5) + hash_value) + t.sourceIP % 1000;
+            t.sourceIP >>= 8;
+        }
+        while (t.sourcePort > 0) {
+            hash_value = ((hash_value << 5) + hash_value) + t.sourcePort % 1000;
+            t.sourcePort >>= 8;
+        }
+
+        while (t.destinationIP > 0)
+        {
+            hash_value = ((hash_value << 5) + hash_value) + t.destinationIP % 1000;
+            t.destinationIP >>= 8;
+        }
+        return hash_value;
+    }
+};
+
+
+struct Tuble   //哈希用二元组
+{
+    uint16_t sourcePort;
+    uint32_t sourceIP;
+    Tuble(uint16_t sp, uint32_t sip)
+    {
+        sourcePort = sp;
+        sourceIP = sip;
+    }
+    bool operator==(const Tuble& d) const   //重载运算符实现字典自定义键值
+    {
+        return (this->sourceIP == d.sourceIP) && (this->sourcePort == d.sourcePort);
+    }
+};
+
+struct hashTuble
+{
+    uint32_t operator()(const Tuble& dou) const   //生成hashKey
+    {
+        Tuble d = dou;
+        uint32_t hash_value = 5381;
+        while (d.sourceIP > 0)
+        {
+            hash_value = ((hash_value << 5) + hash_value) + d.sourceIP % 1000;
+            d.sourceIP >>= 8;
+        }
+        while (d.sourcePort > 0) {
+            hash_value = ((hash_value << 5) + hash_value) + d.sourcePort % 1000;
+            d.sourcePort >>= 8;
+        }
+        return hash_value;
+    }
+};
+
 class PacketTimeAndLen
 {
 public:
@@ -89,6 +149,7 @@ public:
     {
         next = NULL;
         seconds = 0;
+        u_seconds = 0;
         len = 0;
     }
     PacketTimeAndLen(uint32_t u_s, uint32_t s, uint32_t l)
@@ -111,31 +172,6 @@ struct PacketInfo    //需要统计的一个包的全部信息
     uint32_t u_seconds;   /*毫秒数*/
     uint32_t len;   //包长
     Triple port_ip; //端口及ip信息
-};
-
-struct hashTriple
-{
-    uint32_t operator()(const Triple &tri) const   //生成hashKey
-    {
-        Triple t = tri;
-        uint32_t hash_value = 5381;
-        while (t.sourceIP > 0)
-        {
-            hash_value = ((hash_value << 5) + hash_value) + t.sourceIP % 1000;
-            t.sourceIP >>= 8;
-        }
-        while (t.sourcePort > 0) {
-            hash_value = ((hash_value << 5) + hash_value) + t.sourcePort % 1000;
-            t.sourcePort >>= 8;
-        }
-
-        while (t.destinationIP > 0)
-        {
-            hash_value = ((hash_value << 5) + hash_value) + t.destinationIP % 1000;
-            t.destinationIP >>= 8;
-        }
-        return hash_value;
-    }
 };
 
 #endif
