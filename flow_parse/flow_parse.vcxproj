@@ -20,13 +20,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="pcap.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="base_type.h" />
     <ClInclude Include="buildFlow.h" />
+    <ClInclude Include="json.hpp" />
     <ClInclude Include="MySQLConnector.h" />
-    <ClInclude Include="pcap.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

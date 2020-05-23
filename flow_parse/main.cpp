@@ -12,9 +12,19 @@ using namespace std;
 extern char* jsonFileName;
 int main(int argc, char* argv[])
 {
-    jsonFileName = argv[1];
-    cout << "file: " << jsonFileName <<endl; 
-    buildFlow();
+    jsonFileName = argv[2];
+    if (argv[1] == "f")
+    {
+        cout << "file: " << jsonFileName << endl;
+        buildFlow();
+    }
+    else if (argv[1] == "p")
+    {
+        char* pcapFileName = argv[3];
+        cout << "pcapFile: " << pcapFileName << endl;
+        cout << "jsonFile: " << jsonFileName << endl;
+        parsePcapFile(pcapFileName);
+    }
     return 0;
 }
 

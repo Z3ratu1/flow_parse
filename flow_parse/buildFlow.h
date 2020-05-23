@@ -15,76 +15,13 @@
 #include <functional>
 #include <unordered_map>
 #include <arpa/inet.h>
+//#include<WinSock2.h>
+//#pragma comment(lib,"ws2_32.lib")   //windows
 using namespace std;
 using json = nlohmann::json;
 
-#define MAX_FLOW_NUMBER 10000000   //可承载流数
 char* jsonFileName;  //定义全局变量
 
-struct IPInfo   //20字节长ip段
-{
-    uint8_t version_and_length; //ip协议版本和字段长度在一个字节中
-    uint8_t service_field;
-    uint16_t total_length;  //整个报文长度
-    uint16_t identification;
-    uint16_t flag;
-    uint8_t time_to_live;
-    uint8_t protocol;
-    uint16_t header_check;
-    uint32_t sourceIP;
-    uint32_t destinationIP;
-};
-
-struct TCPInfo  //TCP信息
-{
-    uint16_t sourcePort;
-    uint16_t destinationPort;
-    uint32_t seq_no;        //序列号   
-    uint32_t ack_no;        //确认号   
-    uint8_t len;
-    uint8_t tag;
-    uint16_t wnd_size;    //16位窗口大小   
-    uint16_t chk_sum;     //16位TCP检验和   
-    uint16_t urgt_p;      //16为紧急指针   
-};
-
-struct Triple   //哈希用三元组
-{
-    uint16_t sourcePort;
-    uint32_t sourceIP;
-    uint32_t destinationIP;
-};
-
-class PacketTimeAndLen
-{
-public:
-    PacketTimeAndLen()
-    {
-        next = NULL;
-        seconds = 0;
-        len = 0;
-    }
-    PacketTimeAndLen(uint32_t u_s,uint32_t s,uint32_t l)
-    {
-        next = NULL;
-        seconds = s;
-        u_seconds = u_s;
-        len = l;
-    }
-    uint32_t seconds;     /*秒数*/
-    uint32_t u_seconds;   /*毫秒数*/
-    uint32_t len;
-    PacketTimeAndLen* next;   //链表
-};
-
-struct PacketInfo    //需要统计的一个包的全部信息
-{
-    //两个时间戳
-    uint32_t seconds;     /*秒数*/
-    uint32_t u_seconds;   /*毫秒数*/
-    uint32_t len;   //包长
-    Triple port_ip; //端口及ip信息
-};
 
 class Flow
 {
@@ -162,7 +99,6 @@ public:
     PacketTimeAndLen* packetList;  //所有包的链表
 };
 
-
 void InsertFlow(unordered_map<string, int>&dict, PacketInfo &packetInfo, Flow* flowList[], int &index)
 {
     unordered_map<string, int>::const_iterator got;
@@ -177,7 +113,7 @@ void InsertFlow(unordered_map<string, int>&dict, PacketInfo &packetInfo, Flow* f
             dict.insert(flow_info);
             //流数组添加一项
             flowList[index] = new Flow(packetInfo.port_ip, packetInfo.seconds, packetInfo.u_seconds, packetInfo.len);
-            flowList[index]->packetList = new PacketTimeAndLen(packetInfo.u_seconds, packetInfo.seconds, packetInfo.len);     //缺一个微秒
+            flowList[index]->packetList = new PacketTimeAndLen(packetInfo.u_seconds, packetInfo.seconds, packetInfo.len);
             index++;    //数组下标移位
         }
         else
@@ -197,7 +133,7 @@ void InsertFlow(unordered_map<string, int>&dict, PacketInfo &packetInfo, Flow* f
            // flowList[temp_index]->packet_cnt++;
             flowList[temp_index]->packetList->next = listHead;
         }
-        flowList[temp_index]->packet_cnt++;
+        flowList[temp_index]->packet_cnt++;     //待修改
     }
     return ;
 }
@@ -246,7 +182,7 @@ void buildFlow()
     long long cnt = 0;
     double byte_cnt = 0;    //总字节统计
     time_t start_time = time(NULL);
-    while (time(NULL) - start_time < (6*60))  //分钟
+    while (time(NULL) - start_time < (5*60))  //分钟
     {        
         cnt++;
         if(cnt % 1000000000 == 0)  //10亿
@@ -271,7 +207,6 @@ void buildFlow()
         ipinfo = (IPInfo*)ppt;
         ip_len = ((ipinfo->version_and_length) % 16 * 4);  //移位获取IP段长度
         byte_cnt += htons(ipinfo->total_length);   //统计字节数
-        //cout<< int(ipinfo->protocol) <<endl;
         if (int(ipinfo->protocol) == 6)  //TCP
         {
             //端序转换
@@ -330,6 +265,141 @@ void buildFlow()
     json_file << "{}],\n \"cnt\": [\n {\"pac_cnt\": " << cnt << ",\n \"flow_cnt\": " << index << ",\n \"byte_cnt\": " << byte_cnt;
     json_file << " }]}\n";
     json_file.close();
+    return;
+}
+
+void parsePcapFile(char* fileName)
+{
+    fstream fileHandler;
+    fileHandler.open(fileName, ios::in | ios::binary);
+
+    if (!fileHandler)
+    {
+        cout << "The file does not exits or file name is error" << endl;
+
+        return;
+    }
+    pcapFileHeader_t  pcapFileHeader = { 0 };
+    fileHandler.seekg(0);
+    //读取pcap文件头部长度
+    fileHandler.read((char*)&pcapFileHeader, 24);
+    if (pcapFileHeader.magic[0] != PCAP_FILE_MAGIC_1 || pcapFileHeader.magic[1] != PCAP_FILE_MAGIC_2 ||
+        pcapFileHeader.magic[2] != PCAP_FILE_MAGIC_3 || pcapFileHeader.magic[3] != PCAP_FILE_MAGIC_4)
+    {
+        cout << "The file is not a pcap file" << endl;
+
+        return;
+    }
+
+    //定义各个变量
+    pcapPkthdr_t  packetHeader = { 0 };
+    char8_t* buffer;    //缓冲区
+    IPInfo ipinfo;
+    TCPInfo tcpinfo;
+    PacketInfo packetInfo;
+    Triple port_ip;
+    Flow** flowList = new Flow * [MAX_FLOW_NUMBER];         //流数组
+    for (int i = 0; i < MAX_FLOW_NUMBER; i++)
+    {
+        flowList[i] = NULL;
+    }
+    int buffer_pointer = 0;     //定位缓冲区
+    long long file_pointer = 24; //int不够用，设置成long long
+    long long cnt = 0;
+    unordered_map<string, int> dict;
+    int index = 0;
+    double byte_cnt = 0;
+
+    //按块读入数据
+    while (!fileHandler.eof())
+    {
+        buffer = (char8_t*)malloc(BUFFER_SIZE);     //申请内存
+        memset(buffer, 0, BUFFER_SIZE);
+        buffer_pointer = 0;
+        if (buffer == NULL)
+        {
+            cerr << "malloc memory failed" << endl;
+            //处理程序
+        }
+
+        fileHandler.seekg(file_pointer);
+        fileHandler.read(buffer, BUFFER_SIZE); //读入一批处理的数据
+
+
+        while (buffer_pointer < BUFFER_SIZE - MTU)
+        {
+            memcpy((char8_t*)&packetHeader, buffer + buffer_pointer, sizeof(packetHeader));
+            buffer_pointer += sizeof(packetHeader);
+            buffer_pointer += 14;   //以太网帧
+            memcpy((char8_t*)&ipinfo, buffer + buffer_pointer, sizeof(IPInfo));
+            // 处理包
+            byte_cnt += htons(ipinfo.total_length);
+            if (ipinfo.protocol == 0)    //文件以及读完了，指向buffer的空字节部分
+            {
+                break;
+            }
+            cnt++;  //全部包数计数器
+            if (ipinfo.protocol == 6)  //TCP,ascii为6
+            {
+                //处理程序
+                buffer_pointer += sizeof(IPInfo);
+                memcpy((char8_t*)&tcpinfo, buffer + buffer_pointer, sizeof(TCPInfo));
+                buffer_pointer += (packetHeader.caplen - sizeof(IPInfo) - 14);  //多减的14为以太网帧
+
+                //端序转换（不知道在Linux的CPU架构下需不需要转换端序）
+                ipinfo.total_length = htons(ipinfo.total_length);
+                ipinfo.sourceIP = htonl(ipinfo.sourceIP);
+                ipinfo.destinationIP = htonl(ipinfo.destinationIP);
+                tcpinfo.sourcePort = htons(tcpinfo.sourcePort);
+
+                //创建单个处理对象
+                port_ip.destinationIP = ipinfo.destinationIP;
+                port_ip.sourceIP = ipinfo.sourceIP;
+                port_ip.sourcePort = tcpinfo.sourcePort;
+                packetInfo.len = packetHeader.len;
+                packetInfo.port_ip = port_ip;
+                packetInfo.seconds = packetHeader.seconds;
+                packetInfo.u_seconds = packetHeader.u_seconds;
+
+                InsertFlow(dict, packetInfo, flowList, index);
+            }
+            else    //其他包都不要
+            {
+                //处理程序
+                buffer_pointer += packetHeader.caplen - 14;     //-14以太网帧
+            }
+        }
+        cout << file_pointer << endl;
+        file_pointer += buffer_pointer;
+        free(buffer);
+
+    }
+
+    fileHandler.close();
+
+    //处理结束后的收尾程序
+    //释放内存
+    fstream json_file;
+    json_file.open(jsonFileName, ios::out);
+    if (!json_file)
+    {
+        cout << "fail to open " << jsonFileName << endl;
+    }
+    json_file << "{\n  \"flows\": [\n";
+    json_file.close();
+
+    for (int i = 0; i < index; i++)
+    {
+        delete flowList[i];
+        flowList[i] = NULL;
+    }
+    byte_cnt = byte_cnt / (1024 * 1024);
+    json_file.open(jsonFileName, ios::app);
+    json_file << "{}],\n \"cnt\": [\n {\"pac_cnt\": " << cnt << ",\n \"flow_cnt\": " << index << ",\n \"byte_cnt\": " << byte_cnt;
+    json_file << " }]}\n";
+    json_file.close();
+
+
     return;
 }
 
