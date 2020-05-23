@@ -22,28 +22,6 @@ using json = nlohmann::json;
 
 char* jsonFileName;  //定义全局变量
 
-struct hashTriple {
-    uint32_t operator()(Triple &t) const   //生成hashKey
-    {
-        uint32_t hash_value = 5381;
-        while (t.sourceIP > 0)
-        {
-            hash_value = ((hash_value << 5) + hash_value) + t.sourceIP % 1000;
-            t.sourceIP >>= 8;
-        }
-        while (t.sourcePort > 0) {
-            hash_value = ((hash_value << 5) + hash_value) + t.sourcePort % 1000;
-            t.sourcePort >>= 8;
-        }
-
-        while (t.destinationIP > 0)
-        {
-            hash_value = ((hash_value << 5) + hash_value) + t.destinationIP % 1000;
-            t.destinationIP >>= 8;
-        }
-        return hash_value;
-    }
-};
 
 class Flow
 {
@@ -123,7 +101,7 @@ public:
 
 void InsertFlow(unordered_map<Triple, int, hashTriple>&dict, PacketInfo &packetInfo, Flow* flowList[], int &index)
 {
-    unordered_map<Triple, int>::const_iterator got;
+    unordered_map<Triple, int, hashTriple>::const_iterator got;
     Triple port_ip = packetInfo.port_ip;
     got = dict.find(port_ip);
     if (got == dict.end())   //查找不到

@@ -1,7 +1,14 @@
 #ifndef  BASE_TYPE_H
 #define  BASE_TYPE_H
-
-typedef  unsigned char uchar8_t;
+#define  PCAP_FILE_MAGIC_1   0Xd4
+#define  PCAP_FILE_MAGIC_2   0Xc3
+#define  PCAP_FILE_MAGIC_3   0Xb2
+#define  PCAP_FILE_MAGIC_4   0Xa1
+#define BUFFER_SIZE 268435456   //缓存区大小
+#define MTU 1500    //最大单个包大小
+#define MAX_FLOW_NUMBER 10000000   //可承载流数
+#include <stdlib.h>
+typedef  unsigned char uint8_t;
 typedef  char  char8_t;
 typedef  unsigned short uint16_t;
 typedef  short int16_t;
@@ -10,19 +17,13 @@ typedef  int int32_t;
 typedef  unsigned long  ulong64_t;
 typedef  long long64_t;
 
+using namespace std;
 
-#define  PCAP_FILE_MAGIC_1   0Xd4
-#define  PCAP_FILE_MAGIC_2   0Xc3
-#define  PCAP_FILE_MAGIC_3   0Xb2
-#define  PCAP_FILE_MAGIC_4   0Xa1
-#define BUFFER_SIZE 268435456   //缓存区大小
-#define MTU 1500    //最大单个包大小
-#define MAX_FLOW_NUMBER 10000000   //可承载流数
 
 /*pcap file header*/
 typedef struct pcapFileHeader
 {
-    uchar8_t   magic[4];
+    uint8_t   magic[4];
     uint16_t   version_major;
     uint16_t   version_minor;
     int32_t    thiszone;      /*时区修正*/
@@ -75,7 +76,7 @@ struct Triple   //哈希用三元组
     uint32_t sourceIP;
     uint32_t destinationIP;
 
-    bool operator==(const Triple t) const   //重载运算符实现字典自定义键值
+    bool operator==(const Triple &t) const   //重载运算符实现字典自定义键值
     {
         return (this->sourceIP == t.sourceIP) && (this->destinationIP == t.destinationIP) && (this->sourcePort == t.sourcePort);
     }
@@ -112,5 +113,29 @@ struct PacketInfo    //需要统计的一个包的全部信息
     Triple port_ip; //端口及ip信息
 };
 
+struct hashTriple
+{
+    uint32_t operator()(const Triple &tri) const   //生成hashKey
+    {
+        Triple t = tri;
+        uint32_t hash_value = 5381;
+        while (t.sourceIP > 0)
+        {
+            hash_value = ((hash_value << 5) + hash_value) + t.sourceIP % 1000;
+            t.sourceIP >>= 8;
+        }
+        while (t.sourcePort > 0) {
+            hash_value = ((hash_value << 5) + hash_value) + t.sourcePort % 1000;
+            t.sourcePort >>= 8;
+        }
+
+        while (t.destinationIP > 0)
+        {
+            hash_value = ((hash_value << 5) + hash_value) + t.destinationIP % 1000;
+            t.destinationIP >>= 8;
+        }
+        return hash_value;
+    }
+};
 
 #endif
