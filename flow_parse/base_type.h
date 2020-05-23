@@ -74,6 +74,11 @@ struct Triple   //哈希用三元组
     uint16_t sourcePort;
     uint32_t sourceIP;
     uint32_t destinationIP;
+
+    bool operator==(const Triple t) const   //重载运算符实现字典自定义键值
+    {
+        return (this->sourceIP == t.sourceIP) && (this->destinationIP == t.destinationIP) && (this->sourcePort == t.sourcePort);
+    }
 };
 
 class PacketTimeAndLen

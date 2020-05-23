@@ -16,14 +16,18 @@ int main(int argc, char* argv[])
     if (argv[1] == "f")
     {
         cout << "file: " << jsonFileName << endl;
-        buildFlow();
+        BuildFlow();
     }
     else if (argv[1] == "p")
     {
         char* pcapFileName = argv[3];
         cout << "pcapFile: " << pcapFileName << endl;
         cout << "jsonFile: " << jsonFileName << endl;
-        parsePcapFile(pcapFileName);
+        ParsePcap(pcapFileName);
+    }
+    else
+    {
+        cout<<"第一个参数f/p选择使用flow或pcap，第二个参数为json文件名，选择p需要输入第三个参数pcapFileName"
     }
     return 0;
 }

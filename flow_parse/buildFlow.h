@@ -22,6 +22,28 @@ using json = nlohmann::json;
 
 char* jsonFileName;  //定义全局变量
 
+struct hashTriple {
+    uint32_t operator()(Triple &t) const   //生成hashKey
+    {
+        uint32_t hash_value = 5381;
+        while (t.sourceIP > 0)
+        {
+            hash_value = ((hash_value << 5) + hash_value) + t.sourceIP % 1000;
+            t.sourceIP >>= 8;
+        }
+        while (t.sourcePort > 0) {
+            hash_value = ((hash_value << 5) + hash_value) + t.sourcePort % 1000;
+            t.sourcePort >>= 8;
+        }
+
+        while (t.destinationIP > 0)
+        {
+            hash_value = ((hash_value << 5) + hash_value) + t.destinationIP % 1000;
+            t.destinationIP >>= 8;
+        }
+        return hash_value;
+    }
+};
 
 class Flow
 {
@@ -99,17 +121,16 @@ public:
     PacketTimeAndLen* packetList;  //所有包的链表
 };
 
-void InsertFlow(unordered_map<string, int>&dict, PacketInfo &packetInfo, Flow* flowList[], int &index)
+void InsertFlow(unordered_map<Triple, int, hashTriple>&dict, PacketInfo &packetInfo, Flow* flowList[], int &index)
 {
-    unordered_map<string, int>::const_iterator got;
+    unordered_map<Triple, int>::const_iterator got;
     Triple port_ip = packetInfo.port_ip;
-    string hashKey = to_string(port_ip.destinationIP) + to_string(port_ip.sourceIP) + to_string(port_ip.sourcePort);
-    got = dict.find(hashKey);
+    got = dict.find(port_ip);
     if (got == dict.end())   //查找不到
     {
         if (index < MAX_FLOW_NUMBER)    //限制数组不能越界
         {
-            pair<string, int>flow_info(hashKey, index);
+            pair<Triple, int>flow_info(port_ip, index);
             dict.insert(flow_info);
             //流数组添加一项
             flowList[index] = new Flow(packetInfo.port_ip, packetInfo.seconds, packetInfo.u_seconds, packetInfo.len);
@@ -138,7 +159,7 @@ void InsertFlow(unordered_map<string, int>&dict, PacketInfo &packetInfo, Flow* f
     return ;
 }
 
-void buildFlow()
+void BuildFlow()
 {
     //net-view读函数接口
     Mem_reader* mc;
@@ -158,7 +179,7 @@ void buildFlow()
     TCPInfo* tcpinfo;
     PacketInfo packetInfo;
     Triple port_ip;
-    unordered_map<string, int> flowDict;    //查找流下标的字典
+    unordered_map<Triple, int, hashTriple> flowDict;    //查找流下标的字典
     unordered_map<string, int> IPDict;    //筛选IP和端口的字典
     int index = 0;  //总流数，包括被剪枝的流
     Flow** flowList = new Flow * [MAX_FLOW_NUMBER];         //流数组
@@ -268,7 +289,7 @@ void buildFlow()
     return;
 }
 
-void parsePcapFile(char* fileName)
+void ParsePcap(char* fileName)
 {
     fstream fileHandler;
     fileHandler.open(fileName, ios::in | ios::binary);
@@ -306,7 +327,7 @@ void parsePcapFile(char* fileName)
     int buffer_pointer = 0;     //定位缓冲区
     long long file_pointer = 24; //int不够用，设置成long long
     long long cnt = 0;
-    unordered_map<string, int> dict;
+    unordered_map<Triple, int, hashTriple> dict;
     int index = 0;
     double byte_cnt = 0;
 
