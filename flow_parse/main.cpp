@@ -4,35 +4,98 @@
 #include <iostream>
 #include<fstream>
 #include"base_type.h"
+#include"getopt.h"
 #include"buildFlow.h"
 #include"MySQLConnector.h"
 using namespace std;
 
-extern char* jsonFileName;
+const char* program_name;
+extern const char* jsonFileName;
+extern int discard_num;
+
+void print_usage(FILE* stream, int exit_code)
+{
+    fprintf(stream, "Usage: %s options [ inputfile ]\n",
+        program_name);
+    fprintf(stream,
+        "Set default to use Flow mode\n"
+        "  -h  --help       Display this usage information.\n"
+        "  -o  --output     Output json file name.[default 1.json]\n"
+        "  -p  --pcap       Parse pcap file, need to input pacp file name.\n"
+        "  -d  --discard    Discard when packet count smaller than discard.[default 300]\n"
+        "Following arguments are only valid in Flow mode:\n"
+        "  -t  --time       Time for get packet(second).[default 300]\n"
+        "  -i  --interface  Choose interface A,B,C.[default C]\n"
+       );
+    exit(exit_code);
+}
+
+
 int main(int argc, char* argv[])
 {
-    jsonFileName = argv[2];
     char* pcapFileName;
-    int o;
-    while ((o = getopt(argc, argv, "fp")) != -1)
-    {
-        switch (o)
+    char opt;
+    // 先设置好默认值
+    int time = 300;   //应用flow时流抓包时间
+    char interface_func = 'C';   //函数接口
+    bool flow = true;
+
+
+    const char* const short_options = "hi:o:p:d:t:";
+    program_name = argv[0];
+    const struct option long_options[] = {
+    {"help", 0, NULL, 'h'},
+    {"interface", 1, NULL, 'i'},
+    {"output", 1, NULL, 'o'},
+    {"pcap", 1, NULL, 'p' },
+    {"discard", 1, NULL, 'd'},
+    {"time", 1, NULL, 't'},
+    {NULL, 0, NULL, 0}    /* Required at end of array. */
+    };
+
+
+    do {
+        opt = getopt_long(argc, argv, short_options, long_options, NULL);
+        switch (opt)
         {
-        case 'f':
-            cout << "file: " << jsonFileName << endl;
-            BuildFlow();
+        case 'h':    /* -h or --help */
+            print_usage(stdout, 0); //这个函数会直接exit
+        case 'o':    /* -o or --output */
+            jsonFileName = optarg;
             break;
         case 'p':
-            pcapFileName = argv[3];
-            cout << "pcapFile: " << pcapFileName << endl;
-            cout << "jsonFile: " << jsonFileName << endl;
-            ParsePcap(pcapFileName);
+            flow = false;
+            pcapFileName = optarg;
             break;
-        default:
-            cout << "first argument choose -f|-p to use flow or pcap，second argument is json file name ，chose p need to input 3rd arugment pcap file name";
+        case 'd':
+            discard_num = atoi(optarg);
             break;
+        //following args only vaild while use Flow
+        case 'i':
+            interface_func = *optarg;
+            break;
+        case 't':
+            time = atoi(optarg);
+            break;
+        // handle excption
+        case '?':
+            print_usage(stderr, 1);
+        case -1:    /* Done with options. */
+            break;
+        default:    /* Something else: unexpected. */
+            print_usage(stderr, 1);
         }
+    } while (opt != -1);
+
+    if (flow)
+    {
+        BuildFlow(time, interface_func);
     }
+    else
+    {
+        ParsePcap(pcapFileName);
+    }
+
     return 0;
 }
 

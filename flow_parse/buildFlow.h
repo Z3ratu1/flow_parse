@@ -20,8 +20,8 @@
 using namespace std;
 using json = nlohmann::json;
 
-char* jsonFileName;  //定义全局变量
-
+const char* jsonFileName = "1.json";  //设置默认文件名
+int discard_num = 300;  //设置默认剪枝数
 
 class Flow
 {
@@ -62,7 +62,7 @@ public:
             packetList = temp;
         }
         flow_byte_cnt = flow_byte_cnt / (1024 * 1024);   //单位换算成MB
-        if(packet_cnt > 300)  //小于300的不输出
+        if(packet_cnt > discard_num)  //小于300的不输出
         {
             //使用nlohmann json
             //创建一个json对象
@@ -137,20 +137,61 @@ void InsertFlow(unordered_map<Triple, int, hashTriple>&dict, PacketInfo &packetI
     return ;
 }
 
-void BuildFlow()
+void BuildFlow(int run_seconds, char inter_func)
 {
     //net-view读函数接口
     Mem_reader* mc;
     mc = get_my_reader();
 
     //init_memA_reader 表示stream_tcp,init_memB_reader 表示stream_udp,init_memC_reader 表示stream_filter
-    if (!init_memA_reader(mc)) {
-        cerr << "init reader err" << endl;
-        return;
+    switch (inter_func)
+    {
+    case 'A':
+        if (!init_memA_reader(mc)) 
+        {
+            cerr << "init reader err" << endl;
+            return;
+        }
+        else 
+        {
+            cerr << "init reader success" << endl;
+        }
+        break;
+    case 'B':
+        if (!init_memB_reader(mc)) 
+        {
+            cerr << "init reader err" << endl;
+            return;
+        }
+        else 
+        {
+            cerr << "init reader success" << endl;
+        }
+        break;
+    case 'C':
+        if (!init_memC_reader(mc))
+        {
+            cerr << "init reader err" << endl;
+            return;
+        }
+        else
+        {
+            cerr << "init reader success" << endl;
+        }
+        break;
+    default:
+        if (!init_memC_reader(mc))
+        {
+            cerr << "init reader err" << endl;
+            return;
+        }
+        else
+        {
+            cerr << "init reader success" << endl;
+        }
+        break;
     }
-    else {
-        cerr << "init reader success" << endl;
-    }
+
 
     //定义各个变量
     IPInfo* ipinfo;
@@ -181,7 +222,7 @@ void BuildFlow()
     long long cnt = 0;
     double byte_cnt = 0;    //总字节统计
     time_t start_time = time(NULL);
-    while (time(NULL) - start_time < (5*60))  //分钟
+    while (time(NULL) - start_time < run_seconds)  // 时间为秒
     {        
         cnt++;
         if(cnt % 1000000000 == 0)  //10亿
