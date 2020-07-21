@@ -7,15 +7,16 @@
 #include"getopt.h"
 #include"buildFlow.h"
 #include"MySQLConnector.h"
+#include <pthread.h>
 using namespace std;
 
 const char* program_name;
-extern const char* jsonFileName;
+char* jsonFilePath;
 extern int discard_num;
 
 void print_usage(FILE* stream, int exit_code)
 {
-    fprintf(stream, "Usage: %s options [ inputfile ]\n",
+    fprintf(stream, "Usage: %s options [ input ]\n",
         program_name);
     fprintf(stream,
         "Set default to use Flow mode\n"
@@ -31,13 +32,21 @@ void print_usage(FILE* stream, int exit_code)
 }
 
 
+//TCP报文读取线程，执行TCP协议的初筛过滤
+void* TCP_reader_main(void* ptr) {
+    FlowBuilder* run_ptr = (FlowBuilder*)ptr;
+    run_ptr->BuildFlow(300, 'A');
+    return NULL;
+}
+
+
 int main(int argc, char* argv[])
 {
     char* pcapFileName;
     char opt;
     // 先设置好默认值
     int time = 300;   //应用flow时流抓包时间
-    char interface_func = 'C';   //函数接口
+    char interface_func = 'A';   //函数接口
     bool flow = true;
 
 
@@ -61,7 +70,7 @@ int main(int argc, char* argv[])
         case 'h':    /* -h or --help */
             print_usage(stdout, 0); //这个函数会直接exit
         case 'o':    /* -o or --output */
-            jsonFileName = optarg;
+            jsonFilePath = optarg;
             break;
         case 'p':
             flow = false;
@@ -79,6 +88,7 @@ int main(int argc, char* argv[])
             break;
         // handle excption
         case '?':
+            cout << "invaild option" << endl;
             print_usage(stderr, 1);
         case -1:    /* Done with options. */
             break;
@@ -87,15 +97,38 @@ int main(int argc, char* argv[])
         }
     } while (opt != -1);
 
+
     if (flow)
     {
-        BuildFlow(time, interface_func);
+        //BuildFlow(time, interface_func);
+        pthread_t TcpThreadIdList[TCP_WORK_NUM]; 
+        FlowBuilder* TcpBuilderList = new FlowBuilder[TCP_WORK_NUM];
+        //TcpBuilderList[0].initial_my_mem();
+        for (int i = 0; i < TCP_WORK_NUM; i++) {
+            TcpBuilderList[i].FilterId = i;             
+            stringstream stmp;
+            string fileNum = ".json";
+            stmp << jsonFilePath << i << fileNum ;
+            string tmpFileName = stmp.str();
+            TcpBuilderList[i].jsonFileName= const_cast<char*>(tmpFileName.c_str());
+            cout << "file path:" << TcpBuilderList[i].jsonFileName << endl;
+            int ret = pthread_create(&TcpThreadIdList[i], NULL, TCP_reader_main, &TcpBuilderList[i]);
+            if (ret) {
+                cerr << "pthread " << i << " create create error!" << endl;
+                return 1;
+            }
+        }
+
+        for (int i = 0; i < TCP_WORK_NUM; i++) {
+            pthread_join(TcpThreadIdList[i], NULL);
+        }
     }
     else
     {
-        ParsePcap(pcapFileName);
+        return 0;
     }
 
+   
     return 0;
 }
 

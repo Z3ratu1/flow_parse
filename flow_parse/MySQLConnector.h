@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <sstream>
 #include <functional>
 #include <unordered_map>
 #include <postgresql/libpq-fe.h>
@@ -11,7 +12,7 @@
 #include"base_type.h"
 using namespace std;
 
-void initDict(unordered_map<Tuble, int, hashTuble> &dict)	//初始化筛查字典
+void initDict(unordered_map<Tuble, int, hashTuble> &dict, int slice)	//初始化筛查字典 slice: 
 {
 	string strSql = "host = 127.0.0.1 port = 5432 dbname = capture user = capture password = cap1234";
 	PGconn* conn;
@@ -27,8 +28,11 @@ void initDict(unordered_map<Tuble, int, hashTuble> &dict)	//初始化筛查字典
 	{
 		cout << "Connected" << endl;
 	}
-	const char* sql_query = "select ip, port from server_detection.server_index_list where last_detect_code = 2147483648;";
-	res = PQexec(conn, sql_query);
+	const char* sql_query = "select ip, port from server_detection.http_list limit 2000000 offset ";
+	stringstream ss;
+	ss << sql_query << slice* SQL_QUERY_NUM +1;
+	res = PQexec(conn, ss.str().c_str());
+	cout << "sss" << ss.str() << endl;
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) 
 	{
 		cerr << "exec query failed" << endl;
