@@ -12,7 +12,7 @@
 #include"base_type.h"
 using namespace std;
 
-void initDict(unordered_map<Tuble, int, hashTuble> &dict, int slice)	//³õÊ¼»¯É¸²é×Öµä slice: 
+void initDict(unordered_map<Tuble, int, hashTuble> &dict)	//³õÊ¼»¯É¸²é×Öµä slice: 
 {
 	string strSql = "host = 127.0.0.1 port = 5432 dbname = capture user = capture password = cap1234";
 	PGconn* conn;
@@ -28,11 +28,9 @@ void initDict(unordered_map<Tuble, int, hashTuble> &dict, int slice)	//³õÊ¼»¯É¸²
 	{
 		cout << "Connected" << endl;
 	}
-	const char* sql_query = "select ip, port from server_detection.http_list limit 2000000 offset ";
-	stringstream ss;
-	ss << sql_query << slice* SQL_QUERY_NUM +1;
-	res = PQexec(conn, ss.str().c_str());
-	cout << "sss" << ss.str() << endl;
+	const char* sql_query = "select ip, port from server_detection.http_list";
+	res = PQexec(conn, sql_query);
+	cout <<sql_query << endl;
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) 
 	{
 		cerr << "exec query failed" << endl;
@@ -53,7 +51,7 @@ void initDict(unordered_map<Tuble, int, hashTuble> &dict, int slice)	//³õÊ¼»¯É¸²
 		dict.insert(ip_info);
 	}
 	PQclear(res);
-	cout << "init Dict success" << endl;
+	// cout << "init Dict success" << endl;
 }
 
 #endif

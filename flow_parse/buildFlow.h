@@ -1,5 +1,5 @@
-#ifndef  PCAP_H
-#define  PCAP_H
+#ifndef  BUILDFLOW_H
+#define  BUILDFLOW_H
 
 #include "violet_api/mpcap.h"
 #include "violet_api/sh_mem.h"
@@ -15,12 +15,16 @@
 #include <functional>
 #include <unordered_map>
 #include <arpa/inet.h>
+#include <pthread.h>
 //#include<WinSock2.h>
 //#pragma comment(lib,"ws2_32.lib")   //windows
 using namespace std;
 using json = nlohmann::json;
 
+Mem_reader* mc;
 int discard_num = 1000;  //设置默认剪枝数
+pthread_mutex_t mutex;  //互斥锁
+unordered_map<Tuble, int, hashTuble> IPDict;    //筛选IP和端口的字典，全局变量，所有进程共享
 
 class Flow
 {
@@ -105,12 +109,20 @@ public:
 class FlowBuilder
 {
 public:
-    FlowBuilder() { FilterId = 0; };
-    ~FlowBuilder();
+    FlowBuilder() 
+    { FilterId = 0; jsonFileName = NULL; };
+    ~FlowBuilder() 
+    { 
+        if(jsonFileName)
+        {
+            delete jsonFileName;
+            jsonFileName = NULL;
+        }
+    };
     char* jsonFileName;
     int FilterId;
     void InsertFlow(unordered_map<Triple, int, hashTriple>& dict, PacketInfo& packetInfo, Flow* flowList[], int& index);
-    void BuildFlow(int run_seconds, char inter_func);
+    void BuildFlow(int run_seconds);
 
 };
 
@@ -128,7 +140,7 @@ void FlowBuilder::InsertFlow(unordered_map<Triple, int, hashTriple>&dict, Packet
             pair<Triple, int>flow_info(port_ip, index);
             dict.insert(flow_info);
             //流数组添加一项
-            flowList[index] = new Flow(packetInfo.port_ip, packetInfo.seconds, packetInfo.u_seconds, packetInfo.len, jsonFileName);
+            flowList[index] = new Flow(packetInfo.port_ip, packetInfo.seconds, packetInfo.u_seconds, packetInfo.len, this->jsonFileName);
             flowList[index]->packetList = new PacketTimeAndLen(packetInfo.u_seconds, packetInfo.seconds, packetInfo.len);
             index++;    //数组下标移位
         }
@@ -154,62 +166,8 @@ void FlowBuilder::InsertFlow(unordered_map<Triple, int, hashTriple>&dict, Packet
     return ;
 }
 
-void FlowBuilder::BuildFlow(int run_seconds, char inter_func)
+void FlowBuilder::BuildFlow(int run_seconds)
 {
-    //net-view读函数接口
-    Mem_reader* mc;
-    mc = get_my_reader();
-
-    //init_memA_reader 表示stream_tcp,init_memB_reader 表示stream_udp,init_memC_reader 表示stream_filter
-    //默认为A
-    switch (inter_func)
-    {
-    case 'A':
-        if (!init_memA_reader(mc)) 
-        {
-            cerr << "init reader err" << endl;
-            return;
-        }
-        else 
-        {
-            cerr << "init reader success" << endl;
-        }
-        break;
-    case 'B':
-        if (!init_memB_reader(mc)) 
-        {
-            cerr << "init reader err" << endl;
-            return;
-        }
-        else 
-        {
-            cerr << "init reader success" << endl;
-        }
-        break;
-    case 'C':
-        if (!init_memC_reader(mc))
-        {
-            cerr << "init reader err" << endl;
-            return;
-        }
-        else
-        {
-            cerr << "init reader success" << endl;
-        }
-        break;
-    default:
-        if (!init_memA_reader(mc))   
-        {
-            cerr << "init reader err" << endl;
-            return;
-        }
-        else
-        {
-            cerr << "init reader success" << endl;
-        }
-        break;
-    }
-
 
     //定义各个变量
     IPInfo* ipinfo;
@@ -217,7 +175,6 @@ void FlowBuilder::BuildFlow(int run_seconds, char inter_func)
     PacketInfo packetInfo;
     Triple port_ip;
     unordered_map<Triple, int, hashTriple> flowDict;    //查找流下标的字典
-    unordered_map<Tuble, int, hashTuble> IPDict;    //筛选IP和端口的字典
     int index = 0;  //总流数，包括被剪枝的流
     Flow** flowList = new Flow * [MAX_FLOW_NUMBER];         //流数组
 
@@ -226,16 +183,12 @@ void FlowBuilder::BuildFlow(int run_seconds, char inter_func)
     {
         flowList[i] = NULL;
     }
-
-    initDict(IPDict, FilterId);   //初始化筛查字典
-    cout << IPDict.size() << " records in dict" << endl;
-      
+    
     uint16_t ip_len;
     char* ppt;
     uint16_t len;
     uint16_t mask;
-    // len表示被截取的报文长度，mask表示报文属性，在stream中,mask & 0x8000 为true，表示网内到网外，否则相反
-    uint32_t seconds;  //包到达时间
+    uint32_t seconds;
     uint32_t u_seconds;
     long long cnt = 0;
     double byte_cnt = 0;    //总字节统计
@@ -243,11 +196,16 @@ void FlowBuilder::BuildFlow(int run_seconds, char inter_func)
     while (time(NULL) - start_time < run_seconds)  // 时间为秒
     {        
         cnt++;
-        if(cnt % 1000000000 == 0)  //10亿
+        /*if(cnt % 1000000000 == 0)  //10亿
 	      {
 	       cout << cnt << endl;
-	      }
+	      }*/
+
+        // 多线程同时读，增加互斥锁
+        pthread_mutex_lock(&mutex);
         ppt = (char*)read_data(mc, len, mask, seconds, u_seconds);
+        pthread_mutex_unlock(&mutex);
+
         if (ppt == NULL)
         {
             cerr << "ppt is null\n";
@@ -303,11 +261,12 @@ void FlowBuilder::BuildFlow(int run_seconds, char inter_func)
     //处理结束后的收尾程序
     //释放内存
     fstream json_file;
-
-    json_file.open(jsonFileName, ios::out);
+    // cout << "before destruct, jsonFileName:" << this->jsonFileName << endl;
+    json_file.open(this->jsonFileName, ios::out);
     if(!json_file)
     {
-        cout << "fail to open " << jsonFileName <<endl;
+
+        cout << "fail to open " << this->jsonFileName <<endl;
     }
     json_file << "{\n  \"flows\": [\n";
     json_file.close();
@@ -317,13 +276,155 @@ void FlowBuilder::BuildFlow(int run_seconds, char inter_func)
         delete flowList[i];
         flowList[i] = NULL;
     }
+    // cout << "after destruct, jsonFileName:" << this->jsonFileName << endl;
     byte_cnt = byte_cnt / (1024*1024);  //单位换算到M
-    json_file.open(jsonFileName, ios::app);
+    json_file.open(this->jsonFileName, ios::app);
     json_file << "{}],\n \"cnt\": [\n {\"pac_cnt\": " << cnt << ",\n \"flow_cnt\": " << index << ",\n \"byte_cnt\": " << byte_cnt;
     json_file << " }]}\n";
     json_file.close();
+    
+    // 免得输出乱了
+    pthread_mutex_lock(&mutex);
+    cout << "thread " << this->FilterId << " finished" << endl;
+    pthread_mutex_unlock(&mutex);
+    
     return;
 }
 
+// 暂时不用
+/*
+void ParsePcap(char* fileName)
+{
+    fstream fileHandler;
+    fileHandler.open(fileName, ios::in | ios::binary);
 
+    if (!fileHandler)
+    {
+        cout << "The file does not exits or file name is error" << endl;
+
+        return;
+    }
+    pcapFileHeader_t  pcapFileHeader = { 0 };
+    fileHandler.seekg(0);
+    //读取pcap文件头部长度
+    fileHandler.read((char*)&pcapFileHeader, 24);
+    if (pcapFileHeader.magic[0] != PCAP_FILE_MAGIC_1 || pcapFileHeader.magic[1] != PCAP_FILE_MAGIC_2 ||
+        pcapFileHeader.magic[2] != PCAP_FILE_MAGIC_3 || pcapFileHeader.magic[3] != PCAP_FILE_MAGIC_4)
+    {
+        cout << "The file is not a pcap file" << endl;
+
+        return;
+    }
+
+    //定义各个变量
+    pcapPkthdr_t  packetHeader = { 0 };
+    char8_t* buffer;    //缓冲区
+    IPInfo ipinfo;
+    TCPInfo tcpinfo;
+    PacketInfo packetInfo;
+    Triple port_ip;
+    Flow** flowList = new Flow * [MAX_FLOW_NUMBER];         //流数组
+    for (int i = 0; i < MAX_FLOW_NUMBER; i++)
+    {
+        flowList[i] = NULL;
+    }
+    int buffer_pointer = 0;     //定位缓冲区
+    long long file_pointer = 24; //int不够用，设置成long long
+    long long cnt = 0;
+    unordered_map<Triple, int, hashTriple> dict;
+    int index = 0;
+    double byte_cnt = 0;
+
+    //按块读入数据
+    while (!fileHandler.eof())
+    {
+        buffer = (char8_t*)malloc(BUFFER_SIZE);     //申请内存
+        memset(buffer, 0, BUFFER_SIZE);
+        buffer_pointer = 0;
+        if (buffer == NULL)
+        {
+            cerr << "malloc memory failed" << endl;
+            //处理程序
+        }
+
+        fileHandler.seekg(file_pointer);
+        fileHandler.read(buffer, BUFFER_SIZE); //读入一批处理的数据
+
+
+        while (buffer_pointer < BUFFER_SIZE - MTU)
+        {
+            memcpy((char8_t*)&packetHeader, buffer + buffer_pointer, sizeof(packetHeader));
+            buffer_pointer += sizeof(packetHeader);
+            buffer_pointer += 14;   //以太网帧
+            memcpy((char8_t*)&ipinfo, buffer + buffer_pointer, sizeof(IPInfo));
+            // 处理包
+            byte_cnt += htons(ipinfo.total_length);
+            if (ipinfo.protocol == 0)    //文件以及读完了，指向buffer的空字节部分
+            {
+                break;
+            }
+            cnt++;  //全部包数计数器
+            if (ipinfo.protocol == 6)  //TCP,ascii为6
+            {
+                //处理程序
+                buffer_pointer += sizeof(IPInfo);
+                memcpy((char8_t*)&tcpinfo, buffer + buffer_pointer, sizeof(TCPInfo));
+                buffer_pointer += (packetHeader.caplen - sizeof(IPInfo) - 14);  //多减的14为以太网帧
+
+                //端序转换（不知道在Linux的CPU架构下需不需要转换端序）
+                ipinfo.total_length = htons(ipinfo.total_length);
+                ipinfo.sourceIP = htonl(ipinfo.sourceIP);
+                ipinfo.destinationIP = htonl(ipinfo.destinationIP);
+                tcpinfo.sourcePort = htons(tcpinfo.sourcePort);
+
+                //创建单个处理对象
+                port_ip.destinationIP = ipinfo.destinationIP;
+                port_ip.sourceIP = ipinfo.sourceIP;
+                port_ip.sourcePort = tcpinfo.sourcePort;
+                packetInfo.len = packetHeader.len;
+                packetInfo.port_ip = port_ip;
+                packetInfo.seconds = packetHeader.seconds;
+                packetInfo.u_seconds = packetHeader.u_seconds;
+
+                InsertFlow(dict, packetInfo, flowList, index);
+            }
+            else    //其他包都不要
+            {
+                //处理程序
+                buffer_pointer += packetHeader.caplen - 14;     //-14以太网帧
+            }
+        }
+        cout << file_pointer << endl;
+        file_pointer += buffer_pointer;
+        free(buffer);
+
+    }
+
+    fileHandler.close();
+
+    //处理结束后的收尾程序
+    //释放内存
+    fstream json_file;
+    json_file.open(jsonFilePath, ios::out);
+    if (!json_file)
+    {
+        cout << "fail to open " << jsonFileName << endl;
+    }
+    json_file << "{\n  \"flows\": [\n";
+    json_file.close();
+
+    for (int i = 0; i < index; i++)
+    {
+        delete flowList[i];
+        flowList[i] = NULL;
+    }
+    byte_cnt = byte_cnt / (1024 * 1024);
+    json_file.open(jsonFilePath, ios::app);
+    json_file << "{}],\n \"cnt\": [\n {\"pac_cnt\": " << cnt << ",\n \"flow_cnt\": " << index << ",\n \"byte_cnt\": " << byte_cnt;
+    json_file << " }]}\n";
+    json_file.close();
+
+    return;
+}
+*/
 #endif

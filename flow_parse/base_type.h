@@ -7,7 +7,6 @@
 #define BUFFER_SIZE 268435456   //缓存区大小
 #define MTU 1500    //最大单个包大小
 #define MAX_FLOW_NUMBER 10000000   //可承载流数
-#define TCP_WORK_NUM 8  //TCP线程数
 #define SQL_QUERY_NUM 2000000  //单次查询字典记录数
 #include <stdlib.h>
 typedef  unsigned char uint8_t;

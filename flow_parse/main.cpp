@@ -1,19 +1,21 @@
-// ConsoleApplication88.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
-//
-
-#include <iostream>
-#include<fstream>
 #include"base_type.h"
 #include"getopt.h"
 #include"buildFlow.h"
 #include"MySQLConnector.h"
+
+#include <iostream>
+#include<fstream>
 #include <pthread.h>
+#include <unordered_map>
 using namespace std;
 
-const char* program_name;
-char* jsonFilePath;
+int execTime = 300;   //应用flow时流抓包时间
+extern Mem_reader* mc;       //定义为全局变量，各线程共享
 extern int discard_num;
+extern pthread_mutex_t mutex;
+extern unordered_map<Tuble, int, hashTuble> IPDict;
 
+const char* program_name;
 void print_usage(FILE* stream, int exit_code)
 {
     fprintf(stream, "Usage: %s options [ input ]\n",
@@ -27,6 +29,7 @@ void print_usage(FILE* stream, int exit_code)
         "Following arguments are only valid in Flow mode:\n"
         "  -t  --time       Time for get packet(second).[default 300]\n"
         "  -i  --interface  Choose interface A,B,C.[default C]\n"
+        "  -T  --thread     create thread number\n"
        );
     exit(exit_code);
 }
@@ -35,7 +38,7 @@ void print_usage(FILE* stream, int exit_code)
 //TCP报文读取线程，执行TCP协议的初筛过滤
 void* TCP_reader_main(void* ptr) {
     FlowBuilder* run_ptr = (FlowBuilder*)ptr;
-    run_ptr->BuildFlow(300, 'A');
+    run_ptr->BuildFlow(execTime);
     return NULL;
 }
 
@@ -45,12 +48,12 @@ int main(int argc, char* argv[])
     char* pcapFileName;
     char opt;
     // 先设置好默认值
-    int time = 300;   //应用flow时流抓包时间
-    char interface_func = 'A';   //函数接口
     bool flow = true;
-
-
-    const char* const short_options = "hi:o:p:d:t:";
+    int threadNumber = 8;  //线程数
+    char* jsonFilePath;    //文件保存路径
+    char interface_func = 'A';   //函数接口
+    
+    const char* const short_options = "hi:o:p:d:t:T:";
     program_name = argv[0];
     const struct option long_options[] = {
     {"help", 0, NULL, 'h'},
@@ -59,6 +62,7 @@ int main(int argc, char* argv[])
     {"pcap", 1, NULL, 'p' },
     {"discard", 1, NULL, 'd'},
     {"time", 1, NULL, 't'},
+    {"thread", 1, NULL, 'T'},
     {NULL, 0, NULL, 0}    /* Required at end of array. */
     };
 
@@ -72,19 +76,22 @@ int main(int argc, char* argv[])
         case 'o':    /* -o or --output */
             jsonFilePath = optarg;
             break;
-        case 'p':
+        case 'p':    /* -p or --pcap */
             flow = false;
             pcapFileName = optarg;
             break;
-        case 'd':
+        case 'd':    /* -d or --discard */
             discard_num = atoi(optarg);
             break;
         //following args only vaild while use Flow
-        case 'i':
+        case 'i':    /* -i or --interface */
             interface_func = *optarg;
             break;
-        case 't':
-            time = atoi(optarg);
+        case 't':    /* -t or -- time */
+            execTime = atoi(optarg);
+            break;
+        case 'T':
+            threadNumber = atoi(optarg);
             break;
         // handle excption
         case '?':
@@ -100,35 +107,93 @@ int main(int argc, char* argv[])
 
     if (flow)
     {
-        //BuildFlow(time, interface_func);
-        pthread_t TcpThreadIdList[TCP_WORK_NUM]; 
-        FlowBuilder* TcpBuilderList = new FlowBuilder[TCP_WORK_NUM];
-        //TcpBuilderList[0].initial_my_mem();
-        for (int i = 0; i < TCP_WORK_NUM; i++) {
-            TcpBuilderList[i].FilterId = i;             
-            stringstream stmp;
-            string fileNum = ".json";
-            stmp << jsonFilePath << i << fileNum ;
-            string tmpFileName = stmp.str();
-            TcpBuilderList[i].jsonFileName= const_cast<char*>(tmpFileName.c_str());
+        // net-view读函数接口
+        mc = get_my_reader();   //mem_reader初始化
+        switch (interface_func)
+        {
+        case 'A':
+            if (!init_memA_reader(mc))
+            {
+                cerr << "init reader err" << endl;
+                return 1;
+            }
+            else
+            {
+                cerr << "init reader success" << endl;
+            }
+            break;
+        case 'B':
+            if (!init_memB_reader(mc))
+            {
+                cerr << "init reader err" << endl;
+                return 1;
+            }
+            else
+            {
+                cerr << "init reader success" << endl;
+            }
+            break;
+        case 'C':
+            if (!init_memC_reader(mc))
+            {
+                cerr << "init reader err" << endl;
+                return 1;
+            }
+            else
+            {
+                cerr << "init reader success" << endl;
+            }
+            break;
+        default:
+            if (!init_memA_reader(mc))
+            {
+                cerr << "init reader err" << endl;
+                return 1;
+            }
+            else
+            {
+                cerr << "init reader success" << endl;
+            }
+            break;
+        }
+
+        initDict(IPDict);   //初始化筛查字典
+        cout << IPDict.size() << " records in dict" << endl;
+
+        pthread_t* TcpThreadIdList = new pthread_t[threadNumber];
+        FlowBuilder* TcpBuilderList = new FlowBuilder[threadNumber];
+        pthread_mutex_init(&mutex, NULL);
+        for (int i = 0; i < threadNumber; i++) 
+        {
+            TcpBuilderList[i].FilterId = i;
+            TcpBuilderList[i].jsonFileName = new char[100];
+            sprintf(TcpBuilderList[i].jsonFileName, jsonFilePath , i);
             cout << "file path:" << TcpBuilderList[i].jsonFileName << endl;
             int ret = pthread_create(&TcpThreadIdList[i], NULL, TCP_reader_main, &TcpBuilderList[i]);
-            if (ret) {
+            if (ret) 
+            {
                 cerr << "pthread " << i << " create create error!" << endl;
                 return 1;
             }
         }
 
-        for (int i = 0; i < TCP_WORK_NUM; i++) {
+        for (int i = 0; i < threadNumber; i++) {
             pthread_join(TcpThreadIdList[i], NULL);
         }
+
+        delete[] TcpBuilderList;
+        delete[] TcpThreadIdList;
+        pthread_mutex_destroy(&mutex);
     }
     else
     {
+        // pcap
+        // ParsePcap(pcapFileName);
+        cout << "this function is unholding..." << endl;
         return 0;
     }
 
-   
+    // cout << "before main end" << endl;
     return 0;
 }
 
